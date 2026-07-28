@@ -1,0 +1,21 @@
+{
+  "name": "pip-manager",
+  "version": "1.0.0",
+  "description": "GNOME Shell extension for managing Picture-in-Picture windows",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsc",
+    "pack": "make pack",
+    "deploy": "make install"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "@girs/gjs": "^4.0.0",
+    "@girs/gnome-shell": "^50.0.0"
+  }
+}

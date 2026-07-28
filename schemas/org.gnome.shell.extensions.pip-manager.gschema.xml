@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.pip-manager"
+          path="/org/gnome/shell/extensions/pip-manager/">
+    <key name="corner" type="s">
+      <default>'bottom-right'</default>
+      <summary>Screen corner for PiP placement</summary>
+      <description>Corner of the screen where PiP windows are placed: top-left, top-right, bottom-right, bottom-left</description>
+    </key>
+    <key name="offset" type="i">
+      <default>20</default>
+      <range min="0" max="100"/>
+      <summary>Screen edge offset in pixels</summary>
+      <description>Distance from the chosen screen corner in pixels</description>
+    </key>
+    <key name="always-on-top" type="b">
+      <default>false</default>
+      <summary>Always on top</summary>
+      <description>Keep PiP window above all other windows</description>
+    </key>
+    <key name="proportional-resize" type="b">
+      <default>true</default>
+      <summary>Proportional resize</summary>
+      <description>Maintain aspect ratio when resizing the PiP window</description>
+    </key>
+  </schema>
+</schemalist>
