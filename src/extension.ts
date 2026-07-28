@@ -8,6 +8,9 @@ interface PiPWindow extends Meta.Window {
     _pipGrabOpBeginId?: number;
     _pipGrabOpEndId?: number;
     _pipSizeChangedId?: number;
+    _pipSettingsChangedId?: number;
+    _pipUnmanagingId?: number;
+    _pipResizing?: boolean;
 }
 
 const PIP_TITLE_EXACT = [
@@ -15,7 +18,29 @@ const PIP_TITLE_EXACT = [
     'picture in picture',
 ];
 
+const RESIZING_GRAB_OPS = new Set<Meta.GrabOp>([
+    Meta.GrabOp.RESIZING_N,
+    Meta.GrabOp.RESIZING_S,
+    Meta.GrabOp.RESIZING_E,
+    Meta.GrabOp.RESIZING_W,
+    Meta.GrabOp.RESIZING_NE,
+    Meta.GrabOp.RESIZING_NW,
+    Meta.GrabOp.RESIZING_SE,
+    Meta.GrabOp.RESIZING_SW,
+    Meta.GrabOp.KEYBOARD_RESIZING_UNKNOWN,
+    Meta.GrabOp.KEYBOARD_RESIZING_N,
+    Meta.GrabOp.KEYBOARD_RESIZING_S,
+    Meta.GrabOp.KEYBOARD_RESIZING_E,
+    Meta.GrabOp.KEYBOARD_RESIZING_W,
+    Meta.GrabOp.KEYBOARD_RESIZING_NE,
+    Meta.GrabOp.KEYBOARD_RESIZING_NW,
+    Meta.GrabOp.KEYBOARD_RESIZING_SE,
+    Meta.GrabOp.KEYBOARD_RESIZING_SW,
+]);
+
 type Corner = 'top-left' | 'top-right' | 'bottom-right' | 'bottom-left';
+
+const SNAP_THRESHOLD_RATIO = 0.15;
 
 function isPiP(window: Meta.Window): boolean {
     if (!window || window.get_window_type() !== Meta.WindowType.NORMAL)
@@ -100,6 +125,7 @@ export default class PiPManager extends Extension {
     private _windowCreatedId?: number;
     private _grabOpEndId?: number;
     private _pendingIdles: Set<number> = new Set();
+    private _managedWindows: Set<PiPWindow> = new Set();
 
     enable(): void {
         this._settings = this.getSettings();
@@ -113,7 +139,7 @@ export default class PiPManager extends Extension {
                     if (!isPiP(window))
                         return GLib.SOURCE_REMOVE;
 
-                    this._setupPiP(window);
+                    this._setupPiP(window as PiPWindow);
                     return GLib.SOURCE_REMOVE;
                 });
                 this._pendingIdles.add(id);
@@ -128,9 +154,7 @@ export default class PiPManager extends Extension {
                 if (op !== Meta.GrabOp.MOVING && op !== Meta.GrabOp.KEYBOARD_MOVING)
                     return;
 
-                const corner = nearestCorner(window);
-                this._settings!.set_string('corner', corner);
-                moveToCorner(window, corner, this._settings!.get_int('offset'));
+                this._snapToNearestCornerIfClose(window);
             },
         );
     }
@@ -150,21 +174,35 @@ export default class PiPManager extends Extension {
             GLib.source_remove(id);
         this._pendingIdles.clear();
 
-        const actors = global.get_window_actors();
-        if (actors) {
-            for (const actor of actors) {
-                const window = actor.meta_window as PiPWindow;
-                if (!window || !isPiP(window))
-                    continue;
-                this._teardownPiP(window);
-            }
-        }
+        for (const window of [...this._managedWindows])
+            this._teardownPiP(window);
+        this._managedWindows.clear();
 
         this._settings = undefined;
     }
 
+    private _snapToNearestCornerIfClose(window: Meta.Window): void {
+        const settings = this._settings!;
+        const workArea = window.get_work_area_current_monitor();
+        const frameRect = window.get_frame_rect();
+        const offset = settings.get_int('offset');
+        const corner = nearestCorner(window);
+        const target = cornerPosition(corner, offset, workArea, frameRect);
+
+        const distance = Math.hypot(frameRect.x - target.x, frameRect.y - target.y);
+        const threshold = Math.min(workArea.width, workArea.height) * SNAP_THRESHOLD_RATIO;
+
+        if (distance > threshold)
+            return;
+
+        settings.set_string('corner', corner);
+        moveToCorner(window, corner, offset);
+    }
+
     private _setupPiP(window: PiPWindow): void {
         const settings = this._settings!;
+
+        this._managedWindows.add(window);
 
         if (settings.get_boolean('always-on-top'))
             window.make_above();
@@ -198,7 +236,7 @@ export default class PiPManager extends Extension {
         if (settings.get_boolean('proportional-resize'))
             this._enableProportionalResize(window);
 
-        const settingsChangedId = settings.connect('changed', (_, key: string) => {
+        window._pipSettingsChangedId = settings.connect('changed', (_, key: string) => {
             switch (key) {
                 case 'proportional-resize':
                     if (settings.get_boolean('proportional-resize'))
@@ -214,18 +252,27 @@ export default class PiPManager extends Extension {
                     break;
             }
         });
-        (window as any)._pipSettingsChangedId = settingsChangedId;
+
+        window._pipUnmanagingId = window.connect('unmanaging', () => {
+            this._teardownPiP(window);
+        });
     }
 
     private _teardownPiP(window: PiPWindow): void {
         this._disableProportionalResize(window);
 
-        if ((window as any)._pipSettingsChangedId) {
-            this._settings?.disconnect((window as any)._pipSettingsChangedId);
-            (window as any)._pipSettingsChangedId = undefined;
+        if (window._pipSettingsChangedId !== undefined) {
+            this._settings?.disconnect(window._pipSettingsChangedId);
+            window._pipSettingsChangedId = undefined;
+        }
+
+        if (window._pipUnmanagingId !== undefined) {
+            window.disconnect(window._pipUnmanagingId);
+            window._pipUnmanagingId = undefined;
         }
 
         window._pipAspectRatio = undefined;
+        this._managedWindows.delete(window);
     }
 
     private _enableProportionalResize(window: PiPWindow): void {
@@ -238,16 +285,8 @@ export default class PiPManager extends Extension {
                 if (w !== window)
                     return;
 
-                if (op === Meta.GrabOp.RESIZING_N ||
-                    op === Meta.GrabOp.RESIZING_S ||
-                    op === Meta.GrabOp.RESIZING_E ||
-                    op === Meta.GrabOp.RESIZING_W ||
-                    op === Meta.GrabOp.RESIZING_NE ||
-                    op === Meta.GrabOp.RESIZING_NW ||
-                    op === Meta.GrabOp.RESIZING_SE ||
-                    op === Meta.GrabOp.RESIZING_SW) {
-                    (window as any)._pipResizing = true;
-                }
+                if (RESIZING_GRAB_OPS.has(op))
+                    window._pipResizing = true;
             },
         );
 
@@ -256,12 +295,12 @@ export default class PiPManager extends Extension {
             (_display: Meta.Display, w: Meta.Window, _op: Meta.GrabOp) => {
                 if (w !== window)
                     return;
-                (window as any)._pipResizing = false;
+                window._pipResizing = false;
             },
         );
 
         window._pipSizeChangedId = window.connect('size-changed', () => {
-            if (!(window as any)._pipResizing)
+            if (!window._pipResizing)
                 return;
             if (!window._pipAspectRatio)
                 return;
@@ -296,7 +335,7 @@ export default class PiPManager extends Extension {
     }
 
     private _disableProportionalResize(window: PiPWindow): void {
-        (window as any)._pipResizing = false;
+        window._pipResizing = false;
 
         if (window._pipGrabOpBeginId !== undefined) {
             global.display.disconnect(window._pipGrabOpBeginId);
