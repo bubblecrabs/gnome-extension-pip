@@ -73,19 +73,6 @@ export default class PiPManagerPreferences extends ExtensionPreferences {
         );
         behaviourGroup.add(alwaysOnTopRow);
 
-        const proportionalResizeRow = new Adw.SwitchRow({
-            title: 'Proportional Resize',
-            subtitle: 'Maintain video aspect ratio when resizing the PiP window',
-            active: settings.get_boolean('proportional-resize'),
-        });
-        settings.bind(
-            'proportional-resize',
-            proportionalResizeRow,
-            'active',
-            Gio.SettingsBindFlags.DEFAULT,
-        );
-        behaviourGroup.add(proportionalResizeRow);
-
         window.add(page);
 
         return Promise.resolve();

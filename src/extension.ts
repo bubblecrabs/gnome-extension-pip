@@ -4,43 +4,14 @@ import Meta from 'gi://Meta';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 interface PiPWindow extends Meta.Window {
-    _pipAspectRatio?: number;
-    _pipPollSourceId?: number;
-    _pipPrevRect?: { x: number; y: number; width: number; height: number };
-    _pipGrabOpBeginId?: number;
-    _pipGrabOpEndId?: number;
     _pipSettingsChangedId?: number;
     _pipUnmanagingId?: number;
-    _pipResizing?: boolean;
 }
 
 const PIP_TITLE_EXACT = [
     'picture-in-picture',
     'picture in picture',
 ];
-
-const RESIZE_GRAVITY: Record<number, { anchorX: 'left' | 'right' | 'center'; anchorY: 'top' | 'bottom' | 'center' }> = {};
-RESIZE_GRAVITY[Meta.GrabOp.RESIZING_N]  = { anchorX: 'center', anchorY: 'bottom' };
-RESIZE_GRAVITY[Meta.GrabOp.RESIZING_S]  = { anchorX: 'center', anchorY: 'top' };
-RESIZE_GRAVITY[Meta.GrabOp.RESIZING_E]  = { anchorX: 'left',   anchorY: 'center' };
-RESIZE_GRAVITY[Meta.GrabOp.RESIZING_W]  = { anchorX: 'right',  anchorY: 'center' };
-RESIZE_GRAVITY[Meta.GrabOp.RESIZING_NE] = { anchorX: 'left',   anchorY: 'bottom' };
-RESIZE_GRAVITY[Meta.GrabOp.RESIZING_NW] = { anchorX: 'right',  anchorY: 'bottom' };
-RESIZE_GRAVITY[Meta.GrabOp.RESIZING_SE] = { anchorX: 'left',   anchorY: 'top' };
-RESIZE_GRAVITY[Meta.GrabOp.RESIZING_SW] = { anchorX: 'right',  anchorY: 'top' };
-
-const KEYBOARD_TO_POINTER: Record<number, number> = {};
-KEYBOARD_TO_POINTER[Meta.GrabOp.KEYBOARD_RESIZING_UNKNOWN] = Meta.GrabOp.RESIZING_SE;
-KEYBOARD_TO_POINTER[Meta.GrabOp.KEYBOARD_RESIZING_N]  = Meta.GrabOp.RESIZING_N;
-KEYBOARD_TO_POINTER[Meta.GrabOp.KEYBOARD_RESIZING_S]  = Meta.GrabOp.RESIZING_S;
-KEYBOARD_TO_POINTER[Meta.GrabOp.KEYBOARD_RESIZING_E]  = Meta.GrabOp.RESIZING_E;
-KEYBOARD_TO_POINTER[Meta.GrabOp.KEYBOARD_RESIZING_W]  = Meta.GrabOp.RESIZING_W;
-KEYBOARD_TO_POINTER[Meta.GrabOp.KEYBOARD_RESIZING_NE] = Meta.GrabOp.RESIZING_NE;
-KEYBOARD_TO_POINTER[Meta.GrabOp.KEYBOARD_RESIZING_NW] = Meta.GrabOp.RESIZING_NW;
-KEYBOARD_TO_POINTER[Meta.GrabOp.KEYBOARD_RESIZING_SE] = Meta.GrabOp.RESIZING_SE;
-KEYBOARD_TO_POINTER[Meta.GrabOp.KEYBOARD_RESIZING_SW] = Meta.GrabOp.RESIZING_SW;
-
-const POLL_INTERVAL = 30;
 
 type Corner = 'top-left' | 'top-right' | 'bottom-right' | 'bottom-left';
 
@@ -122,36 +93,6 @@ function nearestCorner(window: Meta.Window): Corner {
     if (onLeft)
         return 'bottom-left';
     return 'bottom-right';
-}
-
-function getAnchor(
-    rect: { x: number; y: number; width: number; height: number },
-    anchorX: 'left' | 'right' | 'center',
-    anchorY: 'top' | 'bottom' | 'center',
-): { x: number; y: number } {
-    const x = anchorX === 'left' ? rect.x
-        : anchorX === 'right' ? rect.x + rect.width
-        : rect.x + rect.width / 2;
-    const y = anchorY === 'top' ? rect.y
-        : anchorY === 'bottom' ? rect.y + rect.height
-        : rect.y + rect.height / 2;
-    return { x, y };
-}
-
-function adjustPositionForAnchor(
-    newWidth: number,
-    newHeight: number,
-    anchor: { x: number; y: number },
-    anchorX: 'left' | 'right' | 'center',
-    anchorY: 'top' | 'bottom' | 'center',
-): { x: number; y: number } {
-    const x = anchorX === 'left' ? anchor.x
-        : anchorX === 'right' ? anchor.x - newWidth
-        : anchor.x - newWidth / 2;
-    const y = anchorY === 'top' ? anchor.y
-        : anchorY === 'bottom' ? anchor.y - newHeight
-        : anchor.y - newHeight / 2;
-    return { x, y };
 }
 
 export default class PiPManager extends Extension {
@@ -243,11 +184,6 @@ export default class PiPManager extends Extension {
         else
             window.unmake_above();
 
-        const frameRect = window.get_frame_rect();
-        if (frameRect.width > 0 && frameRect.height > 0) {
-            window._pipAspectRatio = frameRect.width / frameRect.height;
-        }
-
         const corner = settings.get_string('corner') as Corner;
         const offset = settings.get_int('offset');
 
@@ -256,34 +192,17 @@ export default class PiPManager extends Extension {
             const firstFrameId = actor.connect('first-frame', () => {
                 actor.disconnect(firstFrameId);
                 moveToCorner(window, corner, offset);
-
-                if (!window._pipAspectRatio) {
-                    const rect = window.get_frame_rect();
-                    if (rect.width > 0 && rect.height > 0)
-                        window._pipAspectRatio = rect.width / rect.height;
-                }
             });
         } else {
             moveToCorner(window, corner, offset);
         }
 
-        if (settings.get_boolean('proportional-resize'))
-            this._enableProportionalResize(window);
-
-        window._pipSettingsChangedId = settings.connect('changed', (_, key: string) => {
-            switch (key) {
-                case 'proportional-resize':
-                    if (settings.get_boolean('proportional-resize'))
-                        this._enableProportionalResize(window);
-                    else
-                        this._disableProportionalResize(window);
-                    break;
-                case 'always-on-top':
-                    if (settings.get_boolean('always-on-top'))
-                        window.make_above();
-                    else
-                        window.unmake_above();
-                    break;
+        window._pipSettingsChangedId = settings.connect('changed', (_s, key: string) => {
+            if (key === 'always-on-top') {
+                if (settings.get_boolean('always-on-top'))
+                    window.make_above();
+                else
+                    window.unmake_above();
             }
         });
 
@@ -293,8 +212,6 @@ export default class PiPManager extends Extension {
     }
 
     private _teardownPiP(window: PiPWindow): void {
-        this._disableProportionalResize(window);
-
         if (window._pipSettingsChangedId !== undefined) {
             this._settings?.disconnect(window._pipSettingsChangedId);
             window._pipSettingsChangedId = undefined;
@@ -305,150 +222,6 @@ export default class PiPManager extends Extension {
             window._pipUnmanagingId = undefined;
         }
 
-        window._pipAspectRatio = undefined;
         this._managedWindows.delete(window);
-    }
-
-    private _enableProportionalResize(window: PiPWindow): void {
-        if (window._pipGrabOpBeginId !== undefined)
-            return;
-
-        window._pipGrabOpBeginId = global.display.connect(
-            'grab-op-begin',
-            (_display: Meta.Display, w: Meta.Window, op: Meta.GrabOp) => {
-                if (w !== window)
-                    return;
-
-                const gravityKey = KEYBOARD_TO_POINTER[op as number] ?? (op as number);
-                if (!RESIZE_GRAVITY[gravityKey])
-                    return;
-
-                window._pipResizing = true;
-                this._startResizePoll(window);
-            },
-        );
-
-        window._pipGrabOpEndId = global.display.connect(
-            'grab-op-end',
-            (_display: Meta.Display, w: Meta.Window, _op: Meta.GrabOp) => {
-                if (w !== window)
-                    return;
-                window._pipResizing = false;
-                this._stopResizePoll(window);
-            },
-        );
-    }
-
-    private _disableProportionalResize(window: PiPWindow): void {
-        window._pipResizing = false;
-        this._stopResizePoll(window);
-
-        if (window._pipGrabOpBeginId !== undefined) {
-            global.display.disconnect(window._pipGrabOpBeginId);
-            window._pipGrabOpBeginId = undefined;
-        }
-
-        if (window._pipGrabOpEndId !== undefined) {
-            global.display.disconnect(window._pipGrabOpEndId);
-            window._pipGrabOpEndId = undefined;
-        }
-    }
-
-    private _startResizePoll(window: PiPWindow): void {
-        if (window._pipPollSourceId !== undefined)
-            return;
-
-        const rect = window.get_frame_rect();
-        window._pipPrevRect = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-
-        window._pipPollSourceId = GLib.timeout_add(
-            GLib.PRIORITY_DEFAULT,
-            POLL_INTERVAL,
-            () => {
-                if (!window._pipResizing) {
-                    this._stopResizePoll(window);
-                    return GLib.SOURCE_REMOVE;
-                }
-
-                this._enforceAspectRatio(window);
-                return GLib.SOURCE_CONTINUE;
-            },
-        );
-    }
-
-    private _stopResizePoll(window: PiPWindow): void {
-        if (window._pipPollSourceId !== undefined) {
-            GLib.source_remove(window._pipPollSourceId);
-            window._pipPollSourceId = undefined;
-        }
-        window._pipPrevRect = undefined;
-    }
-
-    private _enforceAspectRatio(window: PiPWindow): void {
-        if (!window._pipAspectRatio)
-            return;
-
-        const rect = window.get_frame_rect();
-        if (rect.width <= 0 || rect.height <= 0)
-            return;
-
-        const targetRatio = window._pipAspectRatio;
-        const currentRatio = rect.width / rect.height;
-        const tolerance = 0.005;
-
-        if (Math.abs(currentRatio - targetRatio) <= tolerance)
-            return;
-
-        const prev = window._pipPrevRect;
-        if (!prev)
-            return;
-
-        const dw = rect.width - prev.width;
-        const dh = rect.height - prev.height;
-        const isShrinking = dw <= 0 && dh <= 0 && (dw < 0 || dh < 0);
-        const isExpanding = dw >= 0 && dh >= 0 && (dw > 0 || dh > 0);
-
-        if (!isShrinking && !isExpanding)
-            return;
-
-        let newWidth = rect.width;
-        let newHeight = rect.height;
-
-        if (currentRatio > targetRatio) {
-            if (isShrinking)
-                newWidth = Math.round(rect.height * targetRatio);
-            else
-                newHeight = Math.round(rect.width / targetRatio);
-        } else {
-            if (isShrinking)
-                newHeight = Math.round(rect.width / targetRatio);
-            else
-                newWidth = Math.round(rect.height * targetRatio);
-        }
-
-        const minSize = 1;
-        if (newWidth < minSize || newHeight < minSize)
-            return;
-
-        if (Math.abs(newWidth - rect.width) <= 1 && Math.abs(newHeight - rect.height) <= 1)
-            return;
-
-        const grabOp = (global.display as any).get_grab_op() as number;
-        const gravityKey = KEYBOARD_TO_POINTER[grabOp] ?? grabOp;
-        const gravity = RESIZE_GRAVITY[gravityKey];
-
-        let newX = rect.x;
-        let newY = rect.y;
-
-        if (gravity) {
-            const anchor = getAnchor(rect, gravity.anchorX, gravity.anchorY);
-            const pos = adjustPositionForAnchor(newWidth, newHeight, anchor, gravity.anchorX, gravity.anchorY);
-            newX = pos.x;
-            newY = pos.y;
-        }
-
-        window._pipPrevRect = { x: newX, y: newY, width: newWidth, height: newHeight };
-
-        window.move_resize_frame(true, newX, newY, Math.max(minSize, newWidth), Math.max(minSize, newHeight));
     }
 }

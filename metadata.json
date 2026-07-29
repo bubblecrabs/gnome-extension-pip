@@ -3,7 +3,7 @@
   "description": "Control Picture-in-Picture window behaviour: placement, always-on-top, and proportional resize",
   "uuid": "pip-manager@bubblecrabs",
   "shell-version": ["50"],
-  "version": 3,
+  "version": 4,
   "url": "https://github.com/bubblecrabs/gnome-extension-pip",
   "settings-schema": "org.gnome.shell.extensions.pip-manager"
 }
