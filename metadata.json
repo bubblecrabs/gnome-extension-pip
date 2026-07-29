@@ -1,9 +1,9 @@
 {
-  "name": "PiP Manager",
-  "description": "Control Picture-in-Picture window behaviour: placement, always-on-top, and proportional resize",
   "uuid": "pip-manager@bubblecrabs",
+  "name": "PiP Manager",
+  "description": "GNOME Shell extension for managing Picture-in-Picture (PiP) windows from browsers.",
   "shell-version": ["50"],
-  "version": 4,
   "url": "https://github.com/bubblecrabs/gnome-extension-pip",
-  "settings-schema": "org.gnome.shell.extensions.pip-manager"
+  "settings-schema": "org.gnome.shell.extensions.pip-manager",
+  "version": 4
 }
