@@ -16,7 +16,7 @@ function cornerLabel(corner: string): string {
 }
 
 export default class PiPManagerPreferences extends ExtensionPreferences {
-    fillPreferencesWindow(window: Adw.PreferencesWindow): Promise<void> {
+    async fillPreferencesWindow(window: Adw.PreferencesWindow): Promise<void> {
         const settings = this.getSettings();
         const page = new Adw.PreferencesPage();
 
@@ -74,7 +74,5 @@ export default class PiPManagerPreferences extends ExtensionPreferences {
         behaviourGroup.add(alwaysOnTopRow);
 
         window.add(page);
-
-        return Promise.resolve();
     }
 }

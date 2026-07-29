@@ -3,11 +3,6 @@ import Gio from 'gi://Gio';
 import Meta from 'gi://Meta';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
-interface PiPWindow extends Meta.Window {
-    _pipSettingsChangedId?: number;
-    _pipUnmanagingId?: number;
-}
-
 const PIP_TITLE_EXACT = [
     'picture-in-picture',
     'picture in picture',
@@ -96,34 +91,27 @@ function nearestCorner(window: Meta.Window): Corner {
 }
 
 export default class PiPManager extends Extension {
-    private _settings?: Gio.Settings;
-    private _windowCreatedId?: number;
-    private _grabOpEndId?: number;
+    private _settings: Gio.Settings | null = null;
     private _pendingIdles: Set<number> = new Set();
-    private _managedWindows: Set<PiPWindow> = new Set();
+    private _managedWindows: Set<Meta.Window> = new Set();
 
     enable(): void {
         this._settings = this.getSettings();
 
-        this._windowCreatedId = global.display.connect(
-            'window-created',
-            (_display: Meta.Display, window: Meta.Window) => {
+        global.display.connectObject(
+            'window-created', (_display: Meta.Display, window: Meta.Window) => {
                 const id = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
                     this._pendingIdles.delete(id);
 
                     if (!isPiP(window))
                         return GLib.SOURCE_REMOVE;
 
-                    this._setupPiP(window as PiPWindow);
+                    this._setupPiP(window);
                     return GLib.SOURCE_REMOVE;
                 });
                 this._pendingIdles.add(id);
             },
-        );
-
-        this._grabOpEndId = global.display.connect(
-            'grab-op-end',
-            (_display: Meta.Display, window: Meta.Window, op: Meta.GrabOp) => {
+            'grab-op-end', (_display: Meta.Display, window: Meta.Window, op: Meta.GrabOp) => {
                 if (!window || !isPiP(window))
                     return;
                 if (op !== Meta.GrabOp.MOVING && op !== Meta.GrabOp.KEYBOARD_MOVING)
@@ -131,19 +119,12 @@ export default class PiPManager extends Extension {
 
                 this._snapToNearestCornerIfClose(window);
             },
+            this,
         );
     }
 
     disable(): void {
-        if (this._windowCreatedId !== undefined) {
-            global.display.disconnect(this._windowCreatedId);
-            this._windowCreatedId = undefined;
-        }
-
-        if (this._grabOpEndId !== undefined) {
-            global.display.disconnect(this._grabOpEndId);
-            this._grabOpEndId = undefined;
-        }
+        global.display.disconnectObject(this);
 
         for (const id of this._pendingIdles)
             GLib.source_remove(id);
@@ -153,7 +134,7 @@ export default class PiPManager extends Extension {
             this._teardownPiP(window);
         this._managedWindows.clear();
 
-        this._settings = undefined;
+        this._settings = null;
     }
 
     private _snapToNearestCornerIfClose(window: Meta.Window): void {
@@ -174,7 +155,7 @@ export default class PiPManager extends Extension {
         moveToCorner(window, corner, offset);
     }
 
-    private _setupPiP(window: PiPWindow): void {
+    private _setupPiP(window: Meta.Window): void {
         const settings = this._settings!;
 
         this._managedWindows.add(window);
@@ -197,31 +178,22 @@ export default class PiPManager extends Extension {
             moveToCorner(window, corner, offset);
         }
 
-        window._pipSettingsChangedId = settings.connect('changed', (_s, key: string) => {
-            if (key === 'always-on-top') {
-                if (settings.get_boolean('always-on-top'))
-                    window.make_above();
-                else
-                    window.unmake_above();
-            }
-        });
+        settings.connectObject('changed', (_s: Gio.Settings, key: string) => {
+            if (key !== 'always-on-top')
+                return;
 
-        window._pipUnmanagingId = window.connect('unmanaging', () => {
-            this._teardownPiP(window);
-        });
+            if (settings.get_boolean('always-on-top'))
+                window.make_above();
+            else
+                window.unmake_above();
+        }, window);
+
+        window.connectObject('unmanaging', () => this._teardownPiP(window), window);
     }
 
-    private _teardownPiP(window: PiPWindow): void {
-        if (window._pipSettingsChangedId !== undefined) {
-            this._settings?.disconnect(window._pipSettingsChangedId);
-            window._pipSettingsChangedId = undefined;
-        }
-
-        if (window._pipUnmanagingId !== undefined) {
-            window.disconnect(window._pipUnmanagingId);
-            window._pipUnmanagingId = undefined;
-        }
-
+    private _teardownPiP(window: Meta.Window): void {
+        this._settings!.disconnectObject(window);
+        window.disconnectObject(window);
         this._managedWindows.delete(window);
     }
 }
