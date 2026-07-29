@@ -4,9 +4,9 @@ GNOME Shell extension for managing Picture-in-Picture (PiP) windows from browser
 
 ## Features
 
-- **Bottom-right placement** — PiP windows are moved to the bottom-right corner on creation instead of appearing centered
-- **Always-on-top toggle** — Control whether PiP windows stay above other windows (disabled by default)
-- **Snap to nearest corner** — After moving a PiP window, it snaps to the nearest screen corner and remembers the preference
+- **Bottom-right placement** – PiP windows are moved to the bottom-right corner on creation instead of appearing centered
+- **Always-on-top toggle** – Control whether PiP windows stay above other windows (disabled by default)
+- **Snap to nearest corner** – After moving a PiP window, it snaps to the nearest screen corner and remembers the preference
 
 ## Requirements
 
