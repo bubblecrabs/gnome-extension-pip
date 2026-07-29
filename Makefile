@@ -18,7 +18,9 @@ build: dist/extension.js dist/prefs.js schemas/gschemas.compiled
 
 pack: build
 	rm -f $(UUID).zip
-	cp metadata.json schemas dist/ -r
+	cp metadata.json dist/
+	mkdir -p dist/schemas
+	cp schemas/org.gnome.shell.extensions.pip-manager.gschema.xml dist/schemas/
 	cd dist && zip -9r ../$(UUID).zip .
 
 install: build
