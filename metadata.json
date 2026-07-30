@@ -1,6 +1,6 @@
 {
   "uuid": "pip-manager@bubblecrabs",
-  "name": "PiP Manager",
+  "name": "Picture-in-Picture Always on Top",
   "description": "GNOME Shell extension for managing Picture-in-Picture (PiP) windows from browsers.",
   "shell-version": ["50"],
   "url": "https://github.com/bubblecrabs/gnome-extension-pip",

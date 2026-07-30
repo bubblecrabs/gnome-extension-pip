@@ -98,6 +98,19 @@ export default class PiPManager extends Extension {
     enable(): void {
         this._settings = this.getSettings();
 
+        this._settings.connectObject('changed', (_settings: Gio.Settings, key: string) => {
+            if (key !== 'always-on-top')
+                return;
+
+            const alwaysOnTop = this._settings!.get_boolean('always-on-top');
+            for (const window of this._managedWindows) {
+                if (alwaysOnTop)
+                    window.make_above();
+                else
+                    window.unmake_above();
+            }
+        }, this);
+
         global.display.connectObject(
             'window-created', (_display: Meta.Display, window: Meta.Window) => {
                 const id = GLib.idle_add(GLib.PRIORITY_DEFAULT_IDLE, () => {
@@ -125,6 +138,7 @@ export default class PiPManager extends Extension {
 
     disable(): void {
         global.display.disconnectObject(this);
+        this._settings!.disconnectObject(this);
 
         for (const id of this._pendingIdles)
             GLib.source_remove(id);
@@ -178,22 +192,11 @@ export default class PiPManager extends Extension {
             moveToCorner(window, corner, offset);
         }
 
-        settings.connectObject('changed', (_s: Gio.Settings, key: string) => {
-            if (key !== 'always-on-top')
-                return;
-
-            if (settings.get_boolean('always-on-top'))
-                window.make_above();
-            else
-                window.unmake_above();
-        }, window);
-
-        window.connectObject('unmanaging', () => this._teardownPiP(window), window);
+        window.connectObject('unmanaging', () => this._teardownPiP(window), this);
     }
 
     private _teardownPiP(window: Meta.Window): void {
-        this._settings!.disconnectObject(window);
-        window.disconnectObject(window);
+        window.disconnectObject(this);
         this._managedWindows.delete(window);
     }
 }
